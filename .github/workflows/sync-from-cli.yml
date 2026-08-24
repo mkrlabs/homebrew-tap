@@ -1,0 +1,118 @@
+# Pull the latest specnaut-cli release into this tap.
+#
+# The direction is deliberate. This used to be a PUSH: specnaut-cli held a
+# fine-grained PAT with write access here and bumped the formula at release
+# time. That put a live credential in a public repository, and it pointed the
+# wrong way — a repo publishing a release should not need write access to
+# everything that packages it.
+#
+# specnaut-cli is public, so its Releases API needs no authentication at all.
+# This workflow reads it and commits to ITSELF with the run's own GITHUB_TOKEN,
+# which is scoped to this repository and expires with the job. No secret is
+# stored anywhere, in either repo.
+#
+# The cost is latency: a new release lands here within the cron interval rather
+# than within seconds. `workflow_dispatch` is wired for when that matters.
+name: sync from specnaut-cli
+
+on:
+  schedule:
+    - cron: "*/15 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: sync-from-cli
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Bump the formula to the latest published release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          FORMULA="Formula/specnaut.rb"
+          UPSTREAM="specnaut/specnaut-cli"
+
+          # No auth: the source repository is public.
+          tag="$(curl -fsSL "https://api.github.com/repos/$UPSTREAM/releases/latest" | jq -r '.tag_name')"
+          [ -n "$tag" ] && [ "$tag" != "null" ] || { echo "::error::could not read the latest release tag"; exit 1; }
+          version="${tag#v}"
+
+          current="$(grep -oE '^  version "[^"]+"' "$FORMULA" | head -1 | sed 's/.*"\(.*\)"/\1/')"
+          echo "upstream: $version | formula: ${current:-<none>}"
+
+          if [ "$current" = "$version" ]; then
+            echo "already at $version — nothing to do"
+            exit 0
+          fi
+
+          # Every asset the formula references must exist before anything is
+          # rewritten. A release that is still uploading, or one short a
+          # platform, must leave the formula untouched rather than half-bumped.
+          #
+          # Plain variables, not an associative array: `declare -A` needs bash 4,
+          # which the runner has and a macOS shell does not — and a construct
+          # that cannot be exercised outside CI is one that gets debugged in
+          # production.
+          fetch_sha() {
+            line="$(curl -fsSL "https://github.com/$UPSTREAM/releases/download/$tag/$1.sha256")" \
+              || { echo "::error::$1.sha256 missing from $tag — refusing a partial bump" >&2; return 1; }
+            digest="$(printf '%s' "$line" | awk '{print $1}')"
+            printf '%s' "$digest" | grep -qE '^[0-9a-f]{64}$' \
+              || { echo "::error::$1.sha256 is not a 64-hex checksum" >&2; return 1; }
+            printf '%s' "$digest"
+          }
+          sha_mac_arm="$(fetch_sha specnaut-macos-arm64)"
+          sha_mac_x64="$(fetch_sha specnaut-macos-x64)"
+          sha_lin_arm="$(fetch_sha specnaut-linux-arm64)"
+          sha_lin_x64="$(fetch_sha specnaut-linux-x64)"
+
+          python3 - "$FORMULA" "$version" "$tag" \
+            "$sha_mac_arm" "$sha_mac_x64" "$sha_lin_arm" "$sha_lin_x64" <<'PY'
+          import re, sys
+          path, version, tag, mac_arm, mac_x64, lin_arm, lin_x64 = sys.argv[1:8]
+          s = open(path).read()
+          s = re.sub(r'^  version "[^"]+"', f'  version "{version}"', s, count=1, flags=re.M)
+          s = re.sub(r'/download/v[^/]+/', f'/download/{tag}/', s)
+          for asset, digest in (
+              ("specnaut-macos-arm64", mac_arm), ("specnaut-macos-x64", mac_x64),
+              ("specnaut-linux-arm64", lin_arm), ("specnaut-linux-x64", lin_x64)):
+              # Rewrite the sha256 that FOLLOWS this asset's url, so the four
+              # pairs cannot be transposed.
+              s = re.sub(rf'(url "[^"]*/{asset}"\n\s*sha256 ")[0-9a-f]{{64}}(")',
+                         rf'\g<1>{digest}\g<2>', s)
+          open(path, "w").write(s)
+          PY
+
+          # Prove the rewrite before committing it: the file must now carry the
+          # new version and exactly four checksums, none of them stale.
+          grep -q "  version \"$version\"" "$FORMULA" || { echo "::error::version rewrite did not take"; exit 1; }
+          [ "$(grep -c 'sha256 "' "$FORMULA")" -eq 4 ] || { echo "::error::expected 4 checksums"; exit 1; }
+          for digest in "$sha_mac_arm" "$sha_mac_x64" "$sha_lin_arm" "$sha_lin_x64"; do
+            grep -q "$digest" "$FORMULA" || { echo "::error::checksum $digest not written"; exit 1; }
+          done
+
+          # A rewrite that changes nothing is not a failure. It happens when the
+          # formula's version line drifted but its content already matched the
+          # release — the local test hit exactly that, reconstructing the
+          # committed file byte-for-byte from the public assets. Committing
+          # nothing exits non-zero under `set -e` and would redden the job.
+          if [ -z "$(git status --porcelain "$FORMULA")" ]; then
+            echo "formula already matches $tag byte-for-byte — nothing to commit"
+            exit 0
+          fi
+
+          git config user.name "specnaut-bot"
+          git config user.email "bot@specnaut.dev"
+          git add "$FORMULA"
+          git commit -m "chore: bump specnaut to $version"
+          git push
+          echo "✓ formula bumped to $version"
