@@ -16,8 +16,13 @@
 name: sync from specnaut-cli
 
 on:
+  # Hourly, not every fifteen minutes. This is a SAFETY NET — the release
+  # session dispatches both syncs the moment a release lands, so the cron only
+  # covers the case where that did not happen. At */15 it produced ~96 no-op
+  # runs a day per target, and an Actions history that is 99% "nothing to do"
+  # is one where a real failure scrolls past unnoticed.
   schedule:
-    - cron: "*/15 * * * *"
+    - cron: "17 * * * *"
   workflow_dispatch:
 
 permissions:
