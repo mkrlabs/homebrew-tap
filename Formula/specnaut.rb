@@ -1,28 +1,28 @@
 class Specnaut < Formula
   desc "AI project scaffolding CLI with auto-chained workflow, review, and backlog"
   homepage "https://specnaut.com"
-  version "4.0.1"
+  version "4.1.0"
   license "MIT"
 
   on_macos do
     on_arm do
-      url "https://github.com/specnaut/specnaut-cli/releases/download/v4.0.1/specnaut-macos-arm64"
-      sha256 "e9dd758c8af87f60e3ddcedca9866feb9d99f4717279ae33f52fb4a644f3c3bb"
+      url "https://github.com/specnaut/specnaut-cli/releases/download/v4.1.0/specnaut-macos-arm64"
+      sha256 "d38fa5f60cdf98c205000c1e305accc8aa2e5b3bcb0c69df12b2901be2453d4c"
     end
     on_intel do
-      url "https://github.com/specnaut/specnaut-cli/releases/download/v4.0.1/specnaut-macos-x64"
-      sha256 "7abf85df114d38aa3896490216d270cf08d0210b390979b4e88ce645fdfcca0f"
+      url "https://github.com/specnaut/specnaut-cli/releases/download/v4.1.0/specnaut-macos-x64"
+      sha256 "bfe373bb91f89859f80a57231cb39f4e4dba8ae3bf57d91a72ed67a770328e7c"
     end
   end
 
   on_linux do
     on_arm do
-      url "https://github.com/specnaut/specnaut-cli/releases/download/v4.0.1/specnaut-linux-arm64"
-      sha256 "258b39c5974fd406278b73151952b0d7a96f877d7dc287fb86c6f0515cd91949"
+      url "https://github.com/specnaut/specnaut-cli/releases/download/v4.1.0/specnaut-linux-arm64"
+      sha256 "787ba311aabdc48ab452df1c8198d2f4a58b28bf7a14a685eb07748c11999a64"
     end
     on_intel do
-      url "https://github.com/specnaut/specnaut-cli/releases/download/v4.0.1/specnaut-linux-x64"
-      sha256 "18ebf5155a0130f2fa6ea00330b15106a693c2be9909f57fe46d8e479fa68978"
+      url "https://github.com/specnaut/specnaut-cli/releases/download/v4.1.0/specnaut-linux-x64"
+      sha256 "8972f50c89f3501ad09abdff3b9679777dcbe2c18467cbd7cee6ba5540fe98ae"
     end
   end
 
