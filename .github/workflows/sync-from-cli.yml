@@ -36,7 +36,7 @@ jobs:
   sync:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Bump the formula to the latest published release
         env:
@@ -46,8 +46,19 @@ jobs:
           FORMULA="Formula/specnaut.rb"
           UPSTREAM="specnaut/specnaut-cli"
 
-          # No auth: the source repository is public.
-          tag="$(curl -fsSL "https://api.github.com/repos/$UPSTREAM/releases/latest" | jq -r '.tag_name')"
+          # Authenticated, and NOT because the source is private — it is public,
+          # and an unauthenticated read of it works right up until it does not.
+          # The anonymous API limit is 60/hr PER IP, and GitHub-hosted runners
+          # share egress addresses with every other job on the fleet, so this
+          # call fails on a neighbour's traffic. Observed: run 33792004169 died
+          # with `curl: (22) ... error: 403` on exactly that. The run-scoped
+          # token costs nothing, is not a stored secret, and moves the call onto
+          # the 1000/hr authenticated budget.
+          #
+          # `gh` rather than `curl -H`: the token then cannot be spelled into a
+          # header by hand, and a 4xx surfaces as a non-zero exit instead of a
+          # body that `jq` happily reads as `null`.
+          tag="$(gh api "repos/$UPSTREAM/releases/latest" --jq '.tag_name')"
           [ -n "$tag" ] && [ "$tag" != "null" ] || { echo "::error::could not read the latest release tag"; exit 1; }
           version="${tag#v}"
 
